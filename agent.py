@@ -9,13 +9,13 @@ from llm import call_llm
 from tools import tool_execute
 
 
-def agent_loop(client, messages):
+def agent_loop(client, messages, config):
     content_parts = []
     thinking_parts = []
     streamed_tool_calls = {}
 
     with StreamingChatDisplay() as display:
-        for chunk in call_llm(client, messages):
+        for chunk in call_llm(client, messages, config):
             if not chunk.choices:
                 continue
 

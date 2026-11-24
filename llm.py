@@ -32,12 +32,11 @@ You are a precise, practical software engineering assistant with read-only acces
 """
 
 
-def call_llm(client, messages):
+def call_llm(client, messages, config):
     return client.chat.completions.create(
-        # model="nvidia/nemotron-3-ultra-550b-a55b:free",
-        model="qwen3:4b",
+        model=config.model,
         messages=messages,
         tools=[SHELL_TOOL_SCHEMA, READ_FILE_TOOL_SCHEMA],
-        reasoning_effort="low",
-        stream=True,
+        reasoning_effort=config.reasoning_effort,
+        stream=config.stream_responses,
     )
