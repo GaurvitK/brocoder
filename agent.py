@@ -1,4 +1,4 @@
-from openai.types.chat import ChatCompletionMessageToolCall
+from dataclasses import dataclass
 
 from format import (
     display_error,
@@ -6,13 +6,21 @@ from format import (
     StreamingChatDisplay,
 )
 from llm import call_llm
+from messages import AssistantMessage, Message, ToolCall, ToolFunction, ToolResult
 from tools import tool_execute
 
 
-def agent_loop(client, messages, config):
+@dataclass
+class _ToolCallParts:
+    id: str = ""
+    name: str = ""
+    arguments: str = ""
+
+
+def agent_loop(client, messages: list[Message], config) -> tuple[list[Message], bool]:
     content_parts = []
     thinking_parts = []
-    streamed_tool_calls = {}
+    streamed_tool_calls: dict[int, _ToolCallParts] = {}
 
     with StreamingChatDisplay() as display:
         for chunk in call_llm(client, messages, config):
@@ -35,54 +43,38 @@ def agent_loop(client, messages, config):
 
             for tool_call in delta.tool_calls or []:
                 current_call = streamed_tool_calls.setdefault(
-                    tool_call.index,
-                    {
-                        "id": "",
-                        "type": "function",
-                        "function": {"name": "", "arguments": ""},
-                    },
+                    tool_call.index, _ToolCallParts()
                 )
                 if tool_call.id:
-                    current_call["id"] += tool_call.id
-                if tool_call.function and tool_call.function.name:
-                    current_call["function"]["name"] += tool_call.function.name
-                if tool_call.function and tool_call.function.arguments:
-                    current_call["function"]["arguments"] += tool_call.function.arguments
+                    current_call.id += tool_call.id
+                if tool_call.function:
+                    current_call.name += tool_call.function.name or ""
+                    current_call.arguments += tool_call.function.arguments or ""
 
-    content = "".join(content_parts)
-    thinking = "".join(thinking_parts)
-    tool_call_data = [streamed_tool_calls[index] for index in sorted(streamed_tool_calls)]
+    tool_calls = tuple(
+        ToolCall(
+            id=parts.id,
+            type="function",
+            function=ToolFunction(name=parts.name, arguments=parts.arguments),
+        )
+        for _, parts in sorted(streamed_tool_calls.items())
+    )
+    messages.append(AssistantMessage(
+        role="assistant",
+        content="".join(content_parts),
+        reasoning="".join(thinking_parts),
+        tool_calls=tool_calls,
+    ))
 
-    assistant_message = {"role": "assistant"}
-    if content:
-        assistant_message["content"] = content
-    if thinking:
-        assistant_message["reasoning"] = thinking
-    if tool_call_data:
-        assistant_message["tool_calls"] = tool_call_data
-    messages.append(assistant_message)
-
-    if not tool_call_data:
-        return messages, True
-
-    tool_calls = [ChatCompletionMessageToolCall.model_validate(call) for call in tool_call_data]
     for tool_call in tool_calls:
         try:
             display_tool_call(tool_call.function.name, tool_call.function.arguments)
-            result = tool_execute(tool_call)
-            if result is not None:
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": result
-                })
+            output = tool_execute(tool_call)
         except Exception as failure:  # noqa: BLE001 - the model gets to see and retry
             error = f"Tool failed - {type(failure).__name__}: {failure}"
             display_error(error)
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": f"Error: {error}"
-            })
+            messages.append(ToolResult(role="tool", tool_call_id=tool_call.id, error=error))
+        else:
+            messages.append(ToolResult(role="tool", tool_call_id=tool_call.id, output=output))
 
-    return messages, False
+    return messages, not tool_calls

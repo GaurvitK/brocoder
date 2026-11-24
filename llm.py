@@ -1,4 +1,5 @@
-from tools import READ_FILE_TOOL_SCHEMA, SHELL_TOOL_SCHEMA
+from messages import Message
+from tools import TOOL_SCHEMAS
 
 
 SYSTEM_PROMPT = """
@@ -32,11 +33,11 @@ You are a precise, practical software engineering assistant with read-only acces
 """
 
 
-def call_llm(client, messages, config):
+def call_llm(client, messages: list[Message], config):
     return client.chat.completions.create(
         model=config.model,
         messages=messages,
-        tools=[SHELL_TOOL_SCHEMA, READ_FILE_TOOL_SCHEMA],
+        tools=TOOL_SCHEMAS,
         reasoning_effort=config.reasoning_effort,
         stream=config.stream_responses,
     )

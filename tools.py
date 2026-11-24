@@ -1,22 +1,46 @@
 import subprocess
-import json
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import Enum
 
-from format import display_error
+from pydantic import BaseModel, ConfigDict, Field
+
+from messages import ToolCall
 
 
-def tool_execute(tool_call):
-    tool_name = tool_call.function.name
-    arguments = json.loads(tool_call.function.arguments)
-    if tool_name == "shell":
-        result = shell_tool(**arguments)
-    elif tool_name == "read_file":
-        result = read_file(**arguments)
-    else:
-        display_error(f"Unknown tool {tool_name!r}")
-        result = None
+class ToolName(Enum):
+    SHELL = "shell"
+    READ_FILE = "read_file"
 
-    return result
-    
+
+@dataclass(frozen=True)
+class ToolDefinition:
+    description: str
+    arguments: type[BaseModel]
+    handler: Callable[..., str]
+
+
+class ShellArgs(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+    command: str = Field(description="The shell command to run")
+
+
+class ReadFileArgs(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+    path: str = Field(description="Path to the file to read")
+
+
+def tool_execute(tool_call: ToolCall) -> str:
+    function = tool_call.function
+    try:
+        name = ToolName(function.name)
+    except ValueError:
+        raise ValueError(f"Unknown tool {function.name!r}") from None
+
+    tool = _TOOLS[name]
+    args = tool.arguments.model_validate_json(function.arguments)
+    return tool.handler(**args.model_dump())
+
 
 def shell_tool(command: str) -> str:
     """Run an shell command and return it's combined stdout and stderr""" 
@@ -37,38 +61,27 @@ def read_file(path: str) -> str:
         return f.read()
 
 
-SHELL_TOOL_SCHEMA = {
-    "type": "function",
-    "function": {
-        "name": "shell",
-        "description": "Run a shell command and return its combined stdout and stderr.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "The shell command to run",
-                }
-            },
-            "required": ["command"],
-        },
-    },
+_TOOLS = {
+    ToolName.SHELL: ToolDefinition(
+        description="Run a shell command and return its combined stdout and stderr.",
+        arguments=ShellArgs,
+        handler=shell_tool,
+    ),
+    ToolName.READ_FILE: ToolDefinition(
+        description="Read a file and return its contents.",
+        arguments=ReadFileArgs,
+        handler=read_file,
+    ),
 }
 
-READ_FILE_TOOL_SCHEMA = {
-    "type": "function",
-    "function": {
-        "name": "read_file",
-        "description": "Read a file and return its contents.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the file to read",
-                }
-            },
-            "required": ["path"],
+TOOL_SCHEMAS = [
+    {
+        "type": "function",
+        "function": {
+            "name": name.value,
+            "description": tool.description,
+            "parameters": tool.arguments.model_json_schema(),
         },
-    },
-}
+    }
+    for name, tool in _TOOLS.items()
+]
