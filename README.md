@@ -4,11 +4,21 @@ Brocoder is a terminal-based coding assistant that can inspect a project, read f
 
 ## Features
 
-- Streams model reasoning and responses in the terminal
-- Reads files and runs repository inspection commands through tool calls
-- Renders responses as Markdown and displays tool activity
-- Maintains conversation context during a session
-- Works with OpenAI-compatible APIs and optionally with local Ollama models
+- [x] Terminal chat with in-memory conversation history
+- [x] Streaming responses and reasoning when the model provides it
+- [x] Markdown rendering and visible tool activity
+- [x] File reading and shell command execution through tool calls
+- [x] Typed messages, a shared tool registry, and Pydantic validation for tool arguments
+- [x] Configurable OpenAI-compatible providers, with optional local models through Ollama
+- [ ] Add tool-round limits, command timeouts, and output limits
+- [ ] Add automated tests for streaming, tool validation, and failure handling
+- [ ] Save and resume conversations across sessions
+- [ ] Compaction of older turns when conversation history grows
+- [ ] Inject relevant project context when a turn needs it
+- [ ] TODOs and Plans
+- [ ] Sandboxing
+- [ ] Launching subagents to offload tasks with fresh context
+
 
 ## Requirements
 
@@ -53,7 +63,7 @@ Run Brocoder from the repository directory:
 python main.py
 ```
 
-Enter `exit` to end the session.
+Enter `/bye` to end the session.
 
 ## Optional local setup with Ollama
 
